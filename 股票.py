@@ -134,8 +134,15 @@ def process_market_logic(current_price, big_order_vol, stock_name):
     if recent_sell_cnt >= 3: decision_text = f"🎯【💥 做空訊號】{stock_name} 多頭防線潰散，順勢放空！"
 
     return decision_text, st.session_state.wave_alert_text
-# --- 1.5 秒看盤步伐啟動區 ---
+# --- API 連線與測試模式控制機制 (🟢 2026 美股免費沙盒字典解耦安全版) ---
 if (alpaca_key_id and alpaca_secret_key) or test_mode:
+    # 建立正式的 Alpaca REST 連線端點
+    api = tradeapi.REST(
+        key_id=str(alpaca_key_id).strip(), 
+        secret_key=str(alpaca_secret_key).strip(), 
+        base_url='https://alpaca.markets', 
+        api_version='v2'
+    ) if not test_mode else None
     
     @st.fragment(run_every=1.5)
     def start_streaming(code):
@@ -145,7 +152,9 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
             if elapsed_speed > 10.0 or elapsed_speed <= 0: elapsed_speed = 1.50
             st.session_state.last_update_time = current_now
 
-            # 🅰️ 模擬劇本模式
+            # =========================================================================
+            # 📌 模擬劇本模式
+            # =========================================================================
             if test_mode:
                 open_price = 120.00
                 stock_name = code
@@ -179,29 +188,42 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
 
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 100} for i in range(1, 6)]
-            # 🅱️ 盤中實時美股 Alpaca 免費輕量單點串接模式 (網址採字典參數封裝，100% 杜絕相黏錯字)
-            # 數據專用網址 data.alpaca.markets，帶入參數 feed="iex" 完全符合免費與模擬金鑰規範
+            # =========================================================================
+            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 網址與代號字典隔離，100% 斬斷錯字物理可能）
+            # =========================================================================
             else:
+                import requests
                 headers = {
                     "X-Alpaca-API-Key-Id": str(alpaca_key_id).strip(), 
                     "X-Alpaca-Secret-Key": str(alpaca_secret_key).strip()
                 }
                 
-                url_trade = f"https://alpaca.markets{code}/trades/latest"
-                url_quote = f"https://alpaca.markets{code}/quotes/latest"
+                # 🟢 修正：網址字串末尾「絕對沒有變數」，網址乾淨獨立
+                url_trade = "https://alpaca.markets"
+                url_quote = "https://alpaca.markets"
                 
-                res_trade = requests.get(url_trade, headers=headers, params={"feed": "iex"}).json()
-                res_quote = requests.get(url_quote, headers=headers, params={"feed": "iex"}).json()
+                # 🟢 修正：股票代號完全拆入 params 字典中，Alpaca 網址絕對不可能再跟代號相黏！
+                query_params = {
+                    "symbols": str(code).strip(),
+                    "feed": "iex"
+                }
                 
-                trade_data = res_trade.get('trade', {})
-                quote_data = res_quote.get('quote', {})
+                res_trade = requests.get(url_trade, headers=headers, params=query_params).json()
+                res_quote = requests.get(url_quote, headers=headers, params=query_params).json()
+                
+                # 從回傳總列表中，精確撈出這檔個股的專屬 Trade 與 Quote 資料
+                trades_dict = res_trade.get('trades', {})
+                quotes_dict = res_quote.get('quotes', {})
+                
+                trade_data = trades_dict.get(code, {})
+                quote_data = quotes_dict.get(code, {})
                 
                 current_price = trade_data.get('p', 0.0)
-                open_price = current_price  
+                open_price = current_price  # 輕量端點以今日首價對齊
                 stock_name = code
                 
                 bid_p = quote_data.get('bp', 0.0) if quote_data.get('bp', 0) > 0 else current_price - 0.01
-                bid_v = int(quote_data.get('bs', 5)) * 100  
+                bid_v = int(quote_data.get('bs', 5)) * 100  # 還原股數
                 ask_p = quote_data.get('ap', 0.0) if quote_data.get('ap', 0) > 0 else current_price + 0.01
                 ask_v = int(quote_data.get('as', 5)) * 100
                 
@@ -214,6 +236,9 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 last_bid = bid_p
                 last_ask = ask_p
 
+            # =========================================================================
+            # 📌 畫面渲染防線
+            # =========================================================================
             if current_price == 0.0 and not test_mode:
                 st.warning(f"⏳ 正在連線至美國 Alpaca 伺服器獲取 {code} 即時數據...")
                 return
@@ -247,7 +272,7 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
             if current_trade_key != st.session_state.last_trade_key and tick_qty >= manual_big_order_lots:
                 if tick_price >= last_ask: current_side = 'Buy'
                 elif tick_price <= last_bid: current_side = 'Sell'
-                else: current_side = 'Buy' if tick_price >= st.session_price else 'Sell'
+                else: current_side = 'Buy' if tick_price >= st.session_state.open_price else 'Sell'
                 
                 tw_tick_time = time.strftime("%H:%M:%S", time.gmtime(time.time() + 28800))
                 st.session_state.order_history.append({
