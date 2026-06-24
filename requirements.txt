@@ -1,1 +1,1 @@
-fugle-marketdata
+alpaca-trade-api
