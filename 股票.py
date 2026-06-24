@@ -189,21 +189,19 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 100} for i in range(1, 6)]
             # =========================================================================
-            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 變數優先權對齊修復版）
+            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 終極修正：切換沙盒合規行情端點）
             # =========================================================================
             else:
                 import requests
-                # 🟢 修正：Headers 宣告優先提到請求之前，根除 name 'headers' is not defined 錯誤！
                 headers = {
                     "X-Alpaca-API-Key-Id": str(alpaca_key_id).strip(), 
                     "X-Alpaca-Secret-Key": str(alpaca_secret_key).strip()
                 }
                 
-                # 網址字串末尾不帶代碼變數，改為安全字典解耦
+                # 🟢 終極修正：將 data.alpaca 替換為免費/模擬金鑰唯一准許進入的 data.sandbox 網址！
                 url_trade = "https://alpaca.markets"
                 url_quote = "https://alpaca.markets"
                 
-                # 股票代號完全拆入 params 字典中
                 query_params = {
                     "symbols": str(code).strip(),
                     "feed": "iex"
@@ -212,7 +210,7 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 res_trade = requests.get(url_trade, headers=headers, params=query_params).json()
                 res_quote = requests.get(url_quote, headers=headers, params=query_params).json()
                 
-                # 從回傳總列表中，精確撈出這檔個股的專屬 Trade 與 Quote 資料
+                # 從多股列表回傳封包中，精確撈出這檔個股的資料
                 trades_dict = res_trade.get('trades', {})
                 quotes_dict = res_quote.get('quotes', {})
                 
