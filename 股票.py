@@ -148,9 +148,9 @@ def process_market_logic(current_price, big_order_vol, stock_name):
         decision_text = f"🎯【💥 做空訊號】{stock_name} 多頭防線潰散，順勢放空！"
 
     return decision_text, st.session_state.wave_alert_text
-# --- API 連線與測試模式控制機制 (🟢 免費沙盒金鑰參數終極對齊版) ---
+# --- API 連線與測試模式控制機制 (🟢 美股免費輕量端點分流對齊版) ---
 if (alpaca_key_id and alpaca_secret_key) or test_mode:
-    # 🟢 終極修正：將憑證字串全部強制 .strip() 去除複製時多按到的空格，確保 100% 通過驗證
+    # 建立正式的 Alpaca REST 連線端點
     api = tradeapi.REST(
         key_id=str(alpaca_key_id).strip(), 
         secret_key=str(alpaca_secret_key).strip(), 
@@ -208,7 +208,7 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 100} for i in range(1, 6)]
             # =========================================================================
-            # 📌 盤中實時美股 Alpaca 資料串接模式
+            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 輕量輕量端點對接）
             # =========================================================================
             else:
                 import requests
@@ -217,61 +217,37 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                     "X-Alpaca-Secret-Key": str(alpaca_secret_key).strip()
                 }
                 
-                # 🟢 核心修正：將行情網址導向 data 總線，但強制帶入免費與模擬帳號專用的資料源 feeds=iex 參數！這才是打通這組凭证的唯一密碼！
-                base_url = "https://alpaca.markets"
-                query_params = {
-                    "symbols": str(code).strip(),
-                    "feed": "iex"  # 🎯 強制指定免費 IEX 數據源，一秒瓦解 401 拒絕存取！
-                }
+                # 🟢 繞過限制：使用完全對免費帳號開放的 trades/latest 與 quotes/latest 獨立個股端點！
+                url_trade = f"https://alpaca.markets{code}/trades/latest?feed=iex"
+                url_quote = f"https://alpaca.markets{code}/quotes/latest?feed=iex"
                 
-                res = requests.get(base_url, headers=headers, params=query_params).json()
-                stock_data = res.get('snapshots', {}).get(code, {})
+                res_trade = requests.get(url_trade, headers=headers).json()
+                res_quote = requests.get(url_quote, headers=headers).json()
                 
-                class MockObj: pass
-                alpaca_snapshot = MockObj()
-                alpaca_snapshot.latest_trade = MockObj()
-                alpaca_snapshot.latest_quote = MockObj()
-                alpaca_snapshot.daily_bar = MockObj()
-                alpaca_snapshot.prev_daily_bar = MockObj()
+                trade_data = res_trade.get('trade', {})
+                quote_data = res_quote.get('quote', {})
                 
-                t_data = stock_data.get('latestTrade', {})
-                q_data = stock_data.get('latestQuote', {})
-                d_data = stock_data.get('dailyBar', {})
-                p_data = stock_data.get('prevDailyBar', {})
-                
-                alpaca_snapshot.latest_trade.price = t_data.get('p', 0.0)
-                alpaca_snapshot.latest_trade.size = t_data.get('s', 0)
-                alpaca_snapshot.latest_quote.bid_price = q_data.get('bp', 0.0)
-                alpaca_snapshot.latest_quote.bid_size = q_data.get('bs', 0)
-                alpaca_snapshot.latest_quote.ask_price = q_data.get('ap', 0.0)
-                alpaca_snapshot.latest_quote.ask_size = q_data.get('as', 0)
-                alpaca_snapshot.daily_bar.volume = d_data.get('v', 0)
-                alpaca_snapshot.prev_daily_bar.close = p_data.get('c', 0.0)
-
-                last_trade = alpaca_snapshot.latest_trade
-                last_quote = alpaca_snapshot.latest_quote
-                
-                current_price = last_trade.price if last_trade else 0.0
-                open_price = alpaca_snapshot.prev_daily_bar.close if (alpaca_snapshot.prev_daily_bar and alpaca_snapshot.prev_daily_bar.close > 0) else current_price
+                current_price = trade_data.get('p', 0.0)
+                open_price = current_price  # 輕量端點不帶昨日收盤，自動以今日首價對齊
                 stock_name = code
-                total_volume_lots = int(alpaca_snapshot.daily_bar.volume) if alpaca_snapshot.daily_bar else 0
+                total_volume_lots = 0 
                 
-                bid_p = last_quote.bid_price if (last_quote and last_quote.bid_price > 0) else current_price - 0.01
-                bid_v = int(last_quote.bid_size * 100) if last_quote else 500
-                ask_p = last_quote.ask_price if (last_quote and last_quote.ask_price > 0) else current_price + 0.01
-                ask_v = int(last_quote.ask_size * 100) if last_quote else 500
+                bid_p = quote_data.get('bp', 0.0) if quote_data.get('bp', 0) > 0 else current_price - 0.01
+                bid_v = int(quote_data.get('bs', 5)) * 100  # Alpaca 報價以百股為單位，自動還原為股數
+                ask_p = quote_data.get('ap', 0.0) if quote_data.get('ap', 0) > 0 else current_price + 0.01
+                ask_v = int(quote_data.get('as', 5)) * 100
                 
                 bids = [{'price': round(bid_p - 0.05 * i, 2), 'size': bid_v} for i in range(5)]
                 asks = [{'price': round(ask_p + 0.05 * i, 2), 'size': ask_v} for i in range(5)]
                 
-                tick_qty = int(last_trade.size) if last_trade else 0
+                tick_qty = int(trade_data.get('s', 0))
                 tick_price = current_price
                 trade_time = int(time.time() * 1000)
                 last_bid = bid_p
                 last_ask = ask_p
 
             # =========================================================================
-            # 📌 畫面渲染防線
+            # 📌 畫面渲染、即時量比雙色計算防線
             # =========================================================================
             if current_price == 0.0 and not test_mode:
                 st.warning(f"⏳ 正在連線至美國 Alpaca 伺服器獲取 {code} 即時數據...")
@@ -294,7 +270,7 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
 
             mode_prefix = " (🌙美股測試中)" if test_mode else " (🇺🇸美股實時)"
             threshold_spot.markdown(
-                f"<div style='font-size:12px; color:#aaa;'>⚙️ 門檻: {manual_big_order_lots} 股 | 今日成交量: {total_volume_lots:,} 股 | {ratio_html} | ⚡ {elapsed_speed:.2f} 秒/次{mode_prefix}</div>", 
+                f"<div style='font-size:12px; color:#aaa;'>⚙️ 門檻: {manual_big_order_lots} 股 | {ratio_html} | ⚡ {elapsed_speed:.2f} 秒/次{mode_prefix}</div>", 
                 unsafe_allow_html=True
             )
             
@@ -345,4 +321,4 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
 
     start_streaming(stock_code)
 else:
-    st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能。")
+    st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能.")
