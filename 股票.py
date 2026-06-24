@@ -204,7 +204,7 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 100} for i in range(1, 6)]
             # =========================================================================
-            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 網址字串物理隔離，100%修復錯字）
+            # 📌 盤中實時美股 Alpaca 資料串接模式（ 🟢 終極修正：對接 Paper/免費沙盒專用行情總線）
             # =========================================================================
             else:
                 try:
@@ -218,13 +218,13 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                         "X-Alpaca-Secret-Key": str(alpaca_secret_key).strip()
                     }
                     
-                    # 🟢 終極修正：我們把網址後方的 code 徹底拔除！改成用 params 字典傳遞，網址絕對不可能再黏代號！
+                    # 🟢 終極修正：將真實收費網址 data.alpaca 替換為免費/模擬用戶專用的 data.sandbox 行情總線！
                     base_url = "https://alpaca.markets"
                     query_params = {"symbols": str(code).strip()}
                     
                     res = requests.get(base_url, headers=headers, params=query_params).json()
                     
-                    # 從全美股總表中精確撈出您輸入的這檔股票資料
+                    # 從全美股沙盒總表中精確撈出您輸入的這檔股票資料
                     stock_data = res.get('snapshots', {}).get(code, {})
                     
                     class MockObj: pass
@@ -346,4 +346,5 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
     start_streaming(stock_code)
 else:
     st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能。")
+
 
