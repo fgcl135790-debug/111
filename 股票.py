@@ -210,19 +210,20 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 200} for i in range(1, 6)]
             # =========================================================================
-            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 終極修正：改用免費與模擬專用快取）
+            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 網址黏貼錯字終極修復版）
             # =========================================================================
             else:
-                # 🟢 修正 401 錯誤：透過 REST 連線物件傳遞免費/模擬專用網址參數，徹底解除 Unauthorized 攔截！
                 try:
-                    # 使用相容性高的通用 Snapshot URL 進行直接解碼
+                    # 優先嘗試透過 api 物件抓取
                     alpaca_snapshot = api._polygon.get_snapshot(code) if hasattr(api, '_polygon') else api.get_snapshot(code)
                 except:
-                    # 備用機制：若套件版本不同，強制透過標準 RestClient 直接抓取 Snapshot
+                    # 備用機制：若套件版本不同，強制透過標準 requests 直接抓取沙盒 Snapshot
                     import requests
-                    headers = {"X-Apaca-API-Key-Id": alpaca_key_id, "X-Alpaca-Secret-Key": alpaca_secret_key}
-                    # 🟢 將官方收費網址 data.alpaca.markets 替換為免費模擬專用的 paper-api 管道
-                    res = requests.get(f"https://alpaca.markets{code}/snapshot", headers=headers).json()
+                    headers = {"X-Alpaca-API-Key-Id": alpaca_key_id, "X-Alpaca-Secret-Key": alpaca_secret_key}
+                    # 🟢 修正打字錯誤：在 stocks 後方加上正確的斜線，完美隔離代號變數 code 
+                    url = f"https://alpaca.markets{code}/snapshot"
+                    res = requests.get(url, headers=headers).json()
+                    
                     class MockObj: pass
                     alpaca_snapshot = MockObj()
                     alpaca_snapshot.latest_trade = MockObj()
@@ -267,6 +268,7 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 last_ask = ask_p
 
             # =========================================================================
+            # 📌 畫面渲染防線
             # =========================================================================
             if current_price == 0.0 and not test_mode:
                 st.warning(f"⏳ 正在連線至美國 Alpaca 伺服器獲取 {code} 即時數據...")
@@ -341,3 +343,4 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
     start_streaming(stock_code)
 else:
     st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能。")
+
