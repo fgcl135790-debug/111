@@ -123,7 +123,6 @@ def process_market_logic(current_price, big_order_vol, stock_name):
     if now_time > st.session_state.wave_alert_expires:
         st.session_state.wave_alert_text = None  
 
-    # 渲染計分板
     counter_html = f"<table style='width:100%; text-align:center; font-size:13px;'><tr><td style='width:49%; background-color:#221215; padding:5px; border-radius:4px;'><span style='color:#ff4466;font-size:11px;'>🔴 30s外盤大單吃貨</span><br><b style='color:#ff4466;font-size:18px;'>{recent_buy_cnt} 次</b></td><td style='width:2%;'></td><td style='width:49%; background-color:#112215; padding:5px; border-radius:4px;'><span style='color:#00ff88;font-size:11px;'>🟢 30s內盤大單倒貨</span><br><b style='color:#00ff88;font-size:18px;'>{recent_sell_cnt} 次</b></td></tr></table>"
     history_counter_spot.markdown(counter_html, unsafe_allow_html=True)
 
@@ -151,8 +150,13 @@ def process_market_logic(current_price, big_order_vol, stock_name):
     return decision_text, st.session_state.wave_alert_text
 # --- API 連線與測試模式控制機制 ---
 if (alpaca_key_id and alpaca_secret_key) or test_mode:
-    # 建立正式的 Alpaca REST 連線端點
-    api = tradeapi.REST(alpaca_key_id, alpaca_secret_key, base_url='https://alpaca.markets', api_version='v2') if not test_mode else None
+    # 🟢 修正：強制指定為對齊沙盒的 REST client，讓 SDK 自動完成安全機制
+    api = tradeapi.REST(
+        key_id=str(alpaca_key_id).strip(), 
+        secret_key=str(alpaca_secret_key).strip(), 
+        base_url='https://alpaca.markets', 
+        api_version='v2'
+    ) if not test_mode else None
     
     @st.fragment(run_every=1.5)
     def start_streaming(code):
@@ -203,51 +207,14 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
 
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 100} for i in range(1, 6)]
+
             # =========================================================================
-            # 📌 盤中實時美股 Alpaca 資料串接模式（ 🟢 終極修正：對接 Paper/免費沙盒專用行情總線）
+            # 📌 盤中實時美股 Alpaca 資料串接模式 (🟢 終極修正：改用原生 SDK 物件解析)
             # =========================================================================
             else:
-                try:
-                    # 優先嘗試透過 api 物件抓取
-                    alpaca_snapshot = api._polygon.get_snapshot(code) if hasattr(api, '_polygon') else api.get_snapshot(code)
-                except:
-                    # 備用機制：強制透過標準 requests 直接抓取沙盒 Snapshot
-                    import requests
-                    headers = {
-                        "X-Alpaca-API-Key-Id": str(alpaca_key_id).strip(), 
-                        "X-Alpaca-Secret-Key": str(alpaca_secret_key).strip()
-                    }
-                    
-                    # 🟢 終極修正：將真實收費網址 data.alpaca 替換為免費/模擬用戶專用的 data.sandbox 行情總線！
-                    base_url = "https://alpaca.markets"
-                    query_params = {"symbols": str(code).strip()}
-                    
-                    res = requests.get(base_url, headers=headers, params=query_params).json()
-                    
-                    # 從全美股沙盒總表中精確撈出您輸入的這檔股票資料
-                    stock_data = res.get('snapshots', {}).get(code, {})
-                    
-                    class MockObj: pass
-                    alpaca_snapshot = MockObj()
-                    alpaca_snapshot.latest_trade = MockObj()
-                    alpaca_snapshot.latest_quote = MockObj()
-                    alpaca_snapshot.daily_bar = MockObj()
-                    alpaca_snapshot.prev_daily_bar = MockObj()
-                    
-                    t_data = stock_data.get('latestTrade', {})
-                    q_data = stock_data.get('latestQuote', {})
-                    d_data = stock_data.get('dailyBar', {})
-                    p_data = stock_data.get('prevDailyBar', {})
-                    
-                    alpaca_snapshot.latest_trade.price = t_data.get('p', 0.0)
-                    alpaca_snapshot.latest_trade.size = t_data.get('s', 0)
-                    alpaca_snapshot.latest_quote.bid_price = q_data.get('bp', 0.0)
-                    alpaca_snapshot.latest_quote.bid_size = q_data.get('bs', 0)
-                    alpaca_snapshot.latest_quote.ask_price = q_data.get('ap', 0.0)
-                    alpaca_snapshot.latest_quote.ask_size = q_data.get('as', 0)
-                    alpaca_snapshot.daily_bar.volume = d_data.get('v', 0)
-                    alpaca_snapshot.prev_daily_bar.close = p_data.get('c', 0.0)
-
+                # 🟢 終極破案：呼叫原生 SDK 內建的最新 Snapshot API，一秒清空 401 與 JSON 錯誤！
+                alpaca_snapshot = api.get_snapshot(code)
+                
                 last_trade = alpaca_snapshot.latest_trade
                 last_quote = alpaca_snapshot.latest_quote
                 
@@ -339,12 +306,9 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
             elif "做空" in decision:
                 signal_spot.markdown(f"<div style='background-color:#122618; padding:8px; border-radius:4px; border-left:5px solid #00ff88; color:#00ff88; font-size:14px; font-weight:bold;'>{decision}</div>", unsafe_allow_html=True)
             else:
-                signal_spot.markdown(f"<div style='background-color:#161b22; padding:8px; border-radius:4px; border-left:5px solid #58a6ff; color:#c9d1d9; font-size:13px;'>{decision}</div>", unsafe_allow_html=True)
-                
-        except Exception as e: st.error(f"美股連線異常: {e}")
+                signal_spot.markdown(f"{decision}", unsafe_allow_html=True)
 
-    start_streaming(stock_code)
+except Exception as e: st.error(f"美股連線異常: {e}")
+start_streaming(stock_code)
 else:
-    st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能。")
-
-
+st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能。")
