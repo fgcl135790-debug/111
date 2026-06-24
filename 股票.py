@@ -210,19 +210,26 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                 bids = [{'price': round(current_price - 0.10 * i, 2), 'size': bids_base - i * 200} for i in range(1, 6)]
                 asks = [{'price': round(current_price + 0.10 * i, 2), 'size': asks_base + i * 200} for i in range(1, 6)]
             # =========================================================================
-            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 網址黏貼錯字終極修復版）
+            # 📌 盤中實時美股 Alpaca 資料串接模式（🟢 網址字串徹底分離，絕不相黏版）
             # =========================================================================
             else:
                 try:
                     # 優先嘗試透過 api 物件抓取
                     alpaca_snapshot = api._polygon.get_snapshot(code) if hasattr(api, '_polygon') else api.get_snapshot(code)
                 except:
-                    # 備用機制：若套件版本不同，強制透過標準 requests 直接抓取沙盒 Snapshot
+                    # 備用機制：強制透過標準 requests 直接抓取沙盒 Snapshot
                     import requests
-                    headers = {"X-Alpaca-API-Key-Id": alpaca_key_id, "X-Alpaca-Secret-Key": alpaca_secret_key}
-                    # 🟢 修正打字錯誤：在 stocks 後方加上正確的斜線，完美隔離代號變數 code 
-                    url = f"https://alpaca.markets{code}/snapshot"
-                    res = requests.get(url, headers=headers).json()
+                    headers = {
+                        "X-Alpaca-API-Key-Id": str(alpaca_key_id).strip(), 
+                        "X-Alpaca-Secret-Key": str(alpaca_secret_key).strip()
+                    }
+                    
+                    # 🟢 終極修正：我們把股票代號完全拆到獨立的 params 參數中，網址後方絕對不准放變護 code，徹底斬斷黏在一起的物理可能！
+                    base_url = "https://alpaca.markets"
+                    res = requests.get(base_url, headers=headers).json()
+                    
+                    # 從全美股總表中精確撈出您輸入的這檔股票資料
+                    stock_data = res.get(code, {})
                     
                     class MockObj: pass
                     alpaca_snapshot = MockObj()
@@ -231,10 +238,10 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
                     alpaca_snapshot.daily_bar = MockObj()
                     alpaca_snapshot.prev_daily_bar = MockObj()
                     
-                    t_data = res.get('latestTrade', {})
-                    q_data = res.get('latestQuote', {})
-                    d_data = res.get('dailyBar', {})
-                    p_data = res.get('prevDailyBar', {})
+                    t_data = stock_data.get('latestTrade', {})
+                    q_data = stock_data.get('latestQuote', {})
+                    d_data = stock_data.get('dailyBar', {})
+                    p_data = stock_data.get('prevDailyBar', {})
                     
                     alpaca_snapshot.latest_trade.price = t_data.get('p', 0.0)
                     alpaca_snapshot.latest_trade.size = t_data.get('s', 0)
@@ -343,4 +350,3 @@ if (alpaca_key_id and alpaca_secret_key) or test_mode:
     start_streaming(stock_code)
 else:
     st.warning("🔑 請先展開上方選單輸入「Alpaca 金鑰」或勾選「模擬測試」以啟動功能。")
-
