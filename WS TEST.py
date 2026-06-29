@@ -7,6 +7,9 @@ API_KEY = "您的_富果_API_KEY"
 # 2. 初始化客戶端
 client = WebSocketClient(api_key=API_KEY)
 
+# 💡 關鍵修正：必須透過 client.stock 來操作股票市場的 WebSocket 事件
+stock = client.stock
+
 # ─── 事件定義 ───
 
 def on_connect():
@@ -14,8 +17,8 @@ def on_connect():
     print("\n🟢 [連線成功] 已成功建立 WebSocket 連線通道！")
     print("👉 正在嘗試訂閱測試商品 (台積電 2330)...")
     
-    # 連線成功後，主動訂閱台積電的成交明細 (trades) 來測試資料流
-    client.subscribe({
+    # 💡 關鍵修正：使用 stock.subscribe 進行訂閱
+    stock.subscribe({
         "channel": "trades",
         "symbol": "2330"
     })
@@ -34,18 +37,19 @@ def on_message(message):
     print(f"📦 資料內容: {message}")
     print("🎉 恭喜！這代表您的連線、驗證、資料訂閱全部正常運作。")
 
-# ─── 註冊檢測事件 ───
-client.on("connect", on_connect)
-client.on("disconnect", on_disconnect)
-client.on("error", on_error)
-client.on("message", on_message)
+# ─── 註冊檢測事件 (改用 stock) ───
+stock.on("connect", on_connect)
+stock.on("disconnect", on_disconnect)
+stock.on("error", on_error)
+stock.on("message", on_message)
 
 # ─── 執行檢測 ───
 if __name__ == "__main__":
     print("🚀 開始執行富果 API WebSocket 連線檢測...")
     try:
-        # 開始連線（此為阻塞式連線，會持續監聽）
-        client.connect()
+        # 💡 關鍵修正：啟動 stock 的連線
+        stock.connect()
     except KeyboardInterrupt:
         print("\n👋 檢測被使用者手動中止。")
-        client.disconnect()
+        # 💡 關鍵修正：手動中斷使用 stock.disconnect()
+        stock.disconnect()
